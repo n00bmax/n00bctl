@@ -1,0 +1,3 @@
+[submodule "terrible"]
+	path = terrible
+	url = https://github.com/n00bmax/terrible.git
