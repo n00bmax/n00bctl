@@ -1,21 +1,21 @@
 package proxmox
 
 import (
-	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 )
 
 func (c *Client) Cluster() (*Cluster, error) {
 	cluster := &Cluster{
-		Client: c,
+		client: c,
 	}
 	return cluster, c.Get("/cluster/status", cluster)
 }
 
 func (cl *Cluster) NextID() (int, error) {
 	var ret string
-	if err := cl.Client.Get("/cluster/nextid", &ret); err != nil {
+	if err := cl.client.Get("/cluster/nextid", &ret); err != nil {
 		return 0, err
 	}
 	return strconv.Atoi(ret)
@@ -26,20 +26,15 @@ func (cl *Cluster) NextID() (int, error) {
 // to filter searched values.
 // It returns a list of ClusterResources.
 func (cl *Cluster) Resources(filters ...string) (rs ClusterResources, err error) {
-	url := "/cluster/resources"
+	u := url.URL{Path: "/cluster/resources"}
 
 	// filters are variadic because they're optional, munging everything passed into one big string to make
 	// a good request and the api will error out if there's an issue
 	if f := strings.Replace(strings.Join(filters, ""), " ", "", -1); f != "" {
-		url = fmt.Sprintf("%s?type=%s", url, f)
+		params := url.Values{}
+		params.Add("type", f)
+		u.RawQuery = params.Encode()
 	}
 
-	return rs, cl.Client.Get(url, &rs)
-}
-
-// Tasks retrieves a summary list of all tasks in the cluster.
-func (cl *Cluster) Tasks() (t ClusterTasks, err error) {
-	url := "/cluster/tasks"
-
-	return t, cl.Client.Get(url, &t)
+	return rs, cl.client.Get(u.String(), &rs)
 }
