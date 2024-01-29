@@ -111,7 +111,7 @@ func (v *VirtualMachine) SplitTags() {
 }
 
 // CloudInit takes four yaml docs as a string and make an ISO, upload it to the data store as <vmid>-user-data.iso and will
-// mount it as a CDROM to be used with nocloud cloud-init. This is NOT how proxmox expects a user to do cloud-init
+// mount it as a CD-ROM to be used with nocloud cloud-init. This is NOT how proxmox expects a user to do cloud-init
 // which can be found here: https://pve.proxmox.com/wiki/Cloud-Init_Support#:~:text=and%20meta.-,Cloud%2DInit%20specific%20Options,-cicustom%3A%20%5Bmeta
 // If you want to use the proxmox implementation you'll need to use the cloudinit APIs https://pve.proxmox.com/pve-docs/api-viewer/index.html#/nodes/{node}/qemu/{vmid}/cloudinit
 func (v *VirtualMachine) CloudInit(device, userdata, metadata, vendordata, networkconfig string) error {
@@ -219,7 +219,7 @@ func makeCloudInitISO(filename, userdata, metadata, vendordata, networkconfig st
 
 // VNCWebSocket copy/paste when calling to get the channel names right
 // send, recv, errors, closer, errors := vm.VNCWebSocket(vnc)
-// for this to work you need to first setup a serial terminal on your vm https://pve.proxmox.com/wiki/Serial_Terminal
+// for this to work you need to first set up a serial terminal on your vm https://pve.proxmox.com/wiki/Serial_Terminal
 func (v *VirtualMachine) VNCWebSocket(vnc *VNC) (chan string, chan string, chan error, func() error, error) {
 	p := fmt.Sprintf("/nodes/%s/qemu/%d/vncwebsocket?port=%d&vncticket=%s",
 		v.Node, v.VMID, vnc.Port, url.QueryEscape(vnc.Ticket))
@@ -316,35 +316,45 @@ func (v *VirtualMachine) Reboot() (task *Task, err error) {
 }
 
 func (v *VirtualMachine) Delete() (task *Task, err error) {
-	if v.HasTag(MakeTag(TagCloudInit)) {
-		node, err := v.client.Node(v.Node)
-		if err != nil {
-			return nil, err
-		}
-		isoStorage, err := node.StorageISO()
-		if err != nil {
-			return nil, err
-		}
-
-		var iso *ISO
-		iso, err = isoStorage.ISO(fmt.Sprintf(UserDataISOFormat, v.VMID))
-		if err != nil {
-			return nil, err
-		}
-		task, err = iso.Delete()
-		if err != nil {
-			return nil, err
-		}
-		if err := task.WaitFor(5); err != nil {
-			return nil, err
-		}
+	if ok, err := v.deleteCloudInitISO(); err != nil || !ok {
+		return nil, err
 	}
+
 	var upid UPID
 	if err := v.client.Delete(fmt.Sprintf("/nodes/%s/qemu/%d", v.Node, v.VMID), &upid); err != nil {
 		return nil, err
 	}
 
 	return NewTask(upid, v.client), nil
+}
+
+func (v *VirtualMachine) deleteCloudInitISO() (ok bool, err error) {
+	if v.HasTag(MakeTag(TagCloudInit)) {
+		node, err := v.client.Node(v.Node)
+		if err != nil {
+			return false, err
+		}
+		isoStorage, err := node.StorageISO()
+		if err != nil {
+			return false, err
+		}
+
+		var iso *ISO
+		iso, err = isoStorage.ISO(fmt.Sprintf(UserDataISOFormat, v.VMID))
+		if err != nil {
+			// skipping, iso not found return no error.
+			return true, nil
+		}
+		task, err := iso.Delete()
+		if err != nil {
+			return false, err
+		}
+		if err := task.WaitFor(5); err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
 }
 
 func (v *VirtualMachine) Migrate(target, targetstorage string) (task *Task, err error) {

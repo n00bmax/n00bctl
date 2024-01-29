@@ -185,23 +185,23 @@ func (plot *Plot) drawAxesToScreen(screen tcell.Screen) {
 		tview.BoxDrawingsLightUpAndRight, axesStyle)
 
 	// draw x axis labels
-	// tview.Print(screen, "0",
-	// 	x+plotYAxisLabelsWidth,
-	// 	y+height-plotXAxisLabelsHeight,
-	// 	1,
-	// 	tview.AlignLeft, plot.axesLabelColor)
+	tview.Print(screen, "0",
+		x+plotYAxisLabelsWidth,
+		y+height-plotXAxisLabelsHeight,
+		1,
+		tview.AlignLeft, plot.axesLabelColor)
 
-	// for labelX := x + plotYAxisLabelsWidth +
-	// 	(plotXAxisLabelsGap)*plotHorizontalScale + 1; labelX < x+width-1; {
-	// 	label := fmt.Sprintf(
-	// 		"%d",
-	// 		(labelX-(x+plotYAxisLabelsWidth)-1)/(plotHorizontalScale)+1,
-	// 	)
+	for labelX := x + plotYAxisLabelsWidth +
+		(plotXAxisLabelsGap)*plotHorizontalScale + 1; labelX < x+width-1; {
+		label := fmt.Sprintf(
+			"%d",
+			(labelX-(x+plotYAxisLabelsWidth)-1)/(plotHorizontalScale)+1,
+		)
 
-	// 	tview.Print(screen, label, labelX, y+height-plotXAxisLabelsHeight, width, tview.AlignLeft, plot.axesLabelColor)
+		tview.Print(screen, label, labelX, y+height-plotXAxisLabelsHeight, width, tview.AlignLeft, plot.axesLabelColor)
 
-	// 	labelX += (len(label) + plotXAxisLabelsGap) * plotHorizontalScale
-	// }
+		labelX += (len(label) + plotXAxisLabelsGap) * plotHorizontalScale
+	}
 
 	// draw Y axis labels
 	maxVal := getMaxFloat64From2dSlice(plot.getData())
