@@ -19,17 +19,28 @@ var (
 type Credentials struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Otp      string `json:"otp,omitempty"`
+	Otp      string `json:"otp,omitempty"` // One-time password for Two-factor authentication.
 	Path     string `json:"path,omitempty"`
 	Privs    string `json:"privs,omitempty"`
 	Realm    string `json:"realm,omitempty"`
 }
 
+type Permission map[string]IntOrBool
+type Permissions map[string]Permission
+
+type PermissionsOptions struct {
+	Path   string // path to limit the return e.g. / or /nodes
+	UserID string // username e.g. root@pam or token
+}
+
 type Session struct {
 	Username            string `json:"username"`
-	CsrfPreventionToken string `json:"CSRFPreventionToken,omitempty"`
-	ClusterName         string `json:"clustername,omitempty"`
-	Ticket              string `json:"ticket,omitempty"`
+	CSRFPreventionToken string `json:"CSRFPreventionToken,omitempty"`
+
+	// Cap is being returned but not documented in the API docs, likely will get rewritten later with better types
+	Cap         map[string]map[string]int `json:"cap,omitempty"`
+	ClusterName string                    `json:"clustername,omitempty"`
+	Ticket      string                    `json:"ticket,omitempty"`
 }
 
 type Version struct {
@@ -47,14 +58,12 @@ type VNC struct {
 }
 
 type Cluster struct {
-	Client  *Client
+	client  *Client
 	Version int
 	Quorate int
 	Nodes   NodeStatuses
 	Name    string
 	ID      string
-	// Broker     *Broker[map[string]ClusterResources]
-	// NodeBroker *Broker[NodeStatuses]
 }
 
 func (cl *Cluster) UnmarshalJSON(b []byte) error {
@@ -122,9 +131,12 @@ type ClusterResources []*ClusterResource
 type ClusterResource struct {
 	ID         string  `jsont:"id"`
 	Type       string  `json:"type"`
+	CGroupMode uint64  `json:"cgroup-mode,omitempty"`
 	Content    string  `json:",omitempty"`
 	CPU        float64 `json:",omitempty"`
 	Disk       uint64  `json:",omitempty"` // documented as string but this is an int
+	DiskRead   uint64  `json:",omitempty"`
+	DiskWrite  uint64  `json:",omitempty"`
 	HAstate    string  `json:",omitempty"`
 	Level      string  `json:",omitempty"`
 	MaxCPU     uint64  `json:",omitempty"`
@@ -132,12 +144,18 @@ type ClusterResource struct {
 	MaxMem     uint64  `json:",omitempty"`
 	Mem        uint64  `json:",omitempty"` // documented as string but this is an int
 	Name       string  `json:",omitempty"`
+	NetIn      uint64  `json:",omitempty"`
+	NetOut     uint64  `json:",omitempty"`
 	Node       string  `json:",omitempty"`
 	PluginType string  `json:",omitempty"`
 	Pool       string  `json:",omitempty"`
+	Shared     uint64  `json:",omitempty"`
 	Status     string  `json:",omitempty"`
 	Storage    string  `json:",omitempty"`
+	Tags       string  `json:",omitempty"`
+	Template   uint64  `json:",omitempty"`
 	Uptime     uint64  `json:",omitempty"`
+	VMID       uint64  `json:",omitempty"`
 }
 
 type NodeStatuses []*NodeStatus
@@ -248,6 +266,9 @@ type Time struct {
 	Time      uint64
 	Localtime uint64
 }
+
+// VirtualMachineOptions A key/value pair used to modify a virtual machine config
+// Refer to https://pve.proxmox.com/pve-docs/api-viewer/#/nodes/{node}/qemu/{vmid}/config for a list of valid values
 type VirtualMachineOptions []*VirtualMachineOption
 type VirtualMachineOption struct {
 	Name  string
@@ -264,6 +285,10 @@ type VirtualMachineConfig struct {
 	Hookscript  string `json:"hookscript,omitempty"`
 	Hotplug     string `json:"hotplug,omitempty"`
 	Template    int    `json:"template,omitempty"`
+	Agent       string `json:"agent,omitempty"`
+	Autostart   int    `json:"autostart,omitempty"`
+	Tablet      int    `json:"tablet,omitempty"`
+	KVM         int    `json:"kvm,omitempty"`
 
 	Tags      string   `json:"tags,omitempty"`
 	TagsSlice []string `json:"-"` // internal helper to manage tags easier
@@ -507,8 +532,6 @@ type VirtualMachineMoveDiskOptions struct {
 type UPID string
 
 type Tasks []*Tasks
-type ClusterTasks []Task
-
 type Task struct {
 	client       *Client
 	UPID         UPID
@@ -535,6 +558,7 @@ func (t *Task) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &tmp); err != nil {
 		return err
 	}
+
 	type TempTask Task
 	var task TempTask
 	if err := json.Unmarshal(b, &task); err != nil {
@@ -738,11 +762,29 @@ func (d *StringOrFloat64) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+type IntOrBool bool
+
+func (b *IntOrBool) UnmarshalJSON(i []byte) error {
+	parsed, err := strconv.ParseBool(string(i))
+	if err != nil {
+		return err
+	}
+	*b = IntOrBool(parsed)
+	return nil
+}
+
+func (b *IntOrBool) MarshalJSON() ([]byte, error) {
+	if *b == true {
+		return []byte("1"), nil
+	}
+	return []byte("0"), nil
+}
+
 type NodeNetworks []*NodeNetwork
 type NodeNetwork struct {
-	client  *Client `json:"-"`
-	Node    string  `json:"-"`
-	NodeAPI *Node   `json:"-"`
+	client  *Client
+	Node    string `json:"-"`
+	NodeAPI *Node  `json:"-"`
 
 	Iface    string `json:"iface,omitempty"`
 	BondMode string `json:"bond_mode,omitempty"`
@@ -872,4 +914,110 @@ type Snapshot struct {
 	Snaptime    int64
 	Parent      string
 	Snapstate   string
+}
+
+type Pools []*Pool
+type Pool struct {
+	client  *Client
+	PoolID  string            `json:"poolid,omitempty"`
+	Comment string            `json:"comment,omitempty"`
+	Members []ClusterResource `json:"members,omitempty"`
+}
+
+type PoolUpdateOption struct {
+	Comment string `json:"comment,omitempty"`
+	// Delete objects rather than adding them
+	Delete bool `json:"delete,omitempty"`
+	// Comma separated lists of Storage names to add/delete to the pool
+	Storage string `json:"storage,omitempty"`
+	// Comma separated lists of Virtual Machine IDs to add/delete to the pool
+	VirtualMachines string `json:"vms,omitempty"`
+}
+
+type Domains []*Domain
+type Domain struct {
+	client *Client
+	Realm  string `json:",omitempty"`
+	Type   string `json:",omitempty"`
+
+	// options https://pve.proxmox.com/pve-docs/api-viewer/#/access/domains
+	ACRValues      string    `json:"acr-values,omitempty"`
+	AutoCreate     IntOrBool `json:"autocreate,omitempty"`
+	BaseDN         string    `json:"base_dn,omitempty"`
+	BindDN         string    `json:"bind_dn,omitempty"`
+	CAPath         string    `json:"capath,omitempty"`
+	CaseSensitive  IntOrBool `json:"case-sensitive,omitempty"`
+	Cert           string    `json:"cert,omitempty"`
+	CertKey        string    `json:"certkey,omitempty"`
+	ClientID       string    `json:"client-id,omitempty"`
+	ClientKey      string    `json:"client-key,omitempty"`
+	Comment        string    `json:"comment,omitempty"`
+	Default        IntOrBool `json:"default,omitempty"`
+	DeleteList     string    `json:"delete,omitempty"` // a list of settings you want to delete?
+	Digest         string    `json:"digest,omitempty"`
+	Domain         string    `json:"domain,omitempty"`
+	Filter         string    `json:"filter,omitempty"`
+	GroupClasses   string    `json:"group_classes,omitempty"`
+	GroupDN        string    `json:"group_dn,omitempty"`
+	GroupFilter    string    `json:"group_filter,omitempty"`
+	GroupName      string    `json:"group_name,omitempty"`
+	IssuerURL      string    `json:"issuer-url,omitempty"`
+	Mode           string    `json:"mode,omitempty"` //ldap, ldaps,ldap+starttls
+	Password       string    `json:"password,omitempty"`
+	Port           int       `json:"port,omitempty"`
+	Prompt         string    `json:"prompt,omitempty"`
+	Scopes         string    `json:"scopes,omitempty"`
+	Secure         IntOrBool `json:"secure,omitempty"`
+	Server1        string    `json:"server1,omitempty"`
+	Server2        string    `json:"server2,omitempty"`
+	SSLVersion     string    `json:"sslversion,omitempty"`
+	SyncDefaults   string    `json:"sync-defaults,omitempty"`
+	SyncAttributes string    `json:"sync_attributes,omitempty"`
+	TFA            string    `json:"tfa,omitempty"`
+	UserAttr       string    `json:"user_attr,omitempty"`
+	UserClasses    string    `json:"user_classes,omitempty"`
+	Verify         IntOrBool `json:"verify,omitempty"`
+}
+
+// DomainSyncOptions see details https://pve.proxmox.com/pve-docs/api-viewer/#/access/domains/{realm}/sync
+type DomainSyncOptions struct {
+	DryRun         bool   `json:"dry-run,omitempty"`
+	EnableNew      bool   `json:"enable-new,omitempty"`
+	RemoveVanished string `json:"remove-vanished,omitempty"`
+	Scope          string `json:"scope,omitempty"` // users, groups, both
+}
+
+type Groups []*Group
+type Group struct {
+	client  *Client
+	GroupID string   `json:"groupid,omitempty"`
+	Comment string   `json:"comment,omitempty"`
+	Users   string   `json:"users,omitempty"`   // only populated via Groups lister
+	Members []string `json:"members,omitempty"` // only populated via Group read
+}
+
+type Users []*User
+type User struct {
+	client         *Client
+	UserID         string           `json:"userid,omitempty"`
+	Comment        string           `json:"comment,omitempty"`
+	Email          string           `json:"email,omitempty"`
+	Enable         IntOrBool        `json:"enable,omitempty"`
+	Expire         int              `json:"expire,omitempty"`
+	Firstname      string           `json:"firstname,omitempty"`
+	Lastname       string           `json:"lastname,omitempty"`
+	Groups         []string         `json:"groups,omitempty"`
+	Keys           string           `json:"keys,omitempty"`
+	Tokens         map[string]Token `json:"tokens,omitempty"`
+	RealmType      string           `json:"realm-type,omitempty"`
+	TFALockedUntil string           `json:"tfa-locked-until,omitempty"`
+	TOTPLocked     IntOrBool        `json:"totp-locked,omitempty"`
+}
+
+type Tokens []*Token
+type Token struct {
+	TokenID string    `json:"tokenid,omitempty"`
+	Comment string    `json:"comment,omitempty"`
+	Expire  int       `json:"expire,omitempty"`
+	Privsep IntOrBool `json:"privsep,omitempty"`
 }
