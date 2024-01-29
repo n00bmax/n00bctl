@@ -7,8 +7,8 @@ import (
 )
 
 var validContent = map[string]struct{}{
-	"iso":    struct{}{},
-	"vztmpl": struct{}{},
+	"iso":    {},
+	"vztmpl": {},
 }
 
 func (s *Storage) Upload(content, file string) (*Task, error) {
@@ -46,11 +46,14 @@ func (s *Storage) DownloadURL(content, filename, url string) (*Task, error) {
 	}
 
 	var upid UPID
-	s.client.Post(fmt.Sprintf("/nodes/%s/storage/%s/download-url", s.Node, s.Name), map[string]string{
+	err := s.client.Post(fmt.Sprintf("/nodes/%s/storage/%s/download-url", s.Node, s.Name), map[string]string{
 		"content":  content,
 		"filename": filename,
 		"url":      url,
 	}, &upid)
+	if err != nil {
+		return nil, err
+	}
 	return NewTask(upid, s.client), nil
 }
 

@@ -5,11 +5,11 @@ import (
 )
 
 func (cl *Cluster) FWGroups() (groups []*FirewallSecurityGroup, err error) {
-	err = cl.Client.Get("/cluster/firewall/groups", &groups)
+	err = cl.client.Get("/cluster/firewall/groups", &groups)
 
 	if nil == err {
 		for _, g := range groups {
-			g.client = cl.Client
+			g.client = cl.client
 		}
 	}
 	return
@@ -17,16 +17,16 @@ func (cl *Cluster) FWGroups() (groups []*FirewallSecurityGroup, err error) {
 
 func (cl *Cluster) FWGroup(name string) (group *FirewallSecurityGroup, err error) {
 	group = &FirewallSecurityGroup{}
-	err = cl.Client.Get(fmt.Sprintf("/cluster/firewall/groups/%s", name), &group.Rules)
+	err = cl.client.Get(fmt.Sprintf("/cluster/firewall/groups/%s", name), &group.Rules)
 	if nil == err {
 		group.Group = name
-		group.client = cl.Client
+		group.client = cl.client
 	}
 	return
 }
 
 func (cl *Cluster) NewFWGroup(group *FirewallSecurityGroup) error {
-	return cl.Client.Post(fmt.Sprintf("/cluster/firewall/groups"), group, &group)
+	return cl.client.Post(fmt.Sprintf("/cluster/firewall/groups"), group, &group)
 }
 
 func (g *FirewallSecurityGroup) GetRules() ([]*FirewallRule, error) {
